@@ -7,13 +7,15 @@ public class CollectionController : ControllerBase
     private static string? _fineCalculatorLicenseKey = null;
     private readonly ILogger<CollectionController> _logger;
     private readonly IFineCalculator _fineCalculator;
+    private readonly VehicleRegistrationService _vehicleRegistrationService;
 
     public CollectionController(ILogger<CollectionController> logger,
-        IFineCalculator fineCalculator,
+        IFineCalculator fineCalculator, VehicleRegistrationService vehicleRegistrationService,
         DaprClient daprClient)
     {
         _logger = logger;
         _fineCalculator = fineCalculator;
+        _vehicleRegistrationService = vehicleRegistrationService;
 
         // set finecalculator component license-key
         if (_fineCalculatorLicenseKey == null)
@@ -24,14 +26,17 @@ public class CollectionController : ControllerBase
     }
 
     // TODO: Bind this method to the pub/sub topic (only required for day 2)
-    [Route("collectfine")]
+    [Topic("pubsub", "speedingviolations")]
+
     [HttpPost()]
     public async Task<ActionResult> CollectFine(SpeedingViolation speedingViolation, [FromServices] DaprClient daprClient)
     {
         decimal fine = _fineCalculator.CalculateFine(_fineCalculatorLicenseKey!, speedingViolation.ViolationInKmh);
 
         // get owner info (Dapr service invocation)
-        // TODO
+        var licenseNumber = speedingViolation.VehicleId;
+        _logger.LogInformation($"License number: {licenseNumber}.");
+        var vehicleInfo = _vehicleRegistrationService.GetVehicleInfo(licenseNumber).Result;
 
         // log fine
         string fineString = fine == 0 ? "tbd by the prosecutor" : $"{fine} Euro";
@@ -52,7 +57,7 @@ public class CollectionController : ControllerBase
         };
 
         // send email using output binding
-        // TODO
+        await daprClient.InvokeBindingAsync("sendmail", "create", body, metadata);
 
         return Ok();
     }
